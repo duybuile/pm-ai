@@ -496,3 +496,10 @@ def run_turn(app: Any, user_message: str, thread_id: str) -> State:
     messages = raw_state.get("messages", [])
     raw_state["messages"] = [_message_to_dict(message) for message in messages]
     return raw_state
+
+
+try:
+    app = build_graph()
+except Exception as exc:  # pragma: no cover - import-time fallback for partial environments
+    logger.warning("Could not initialize compiled LangGraph app at import time: %s", exc)
+    app = None
