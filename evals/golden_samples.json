@@ -1,0 +1,32 @@
+[
+  {
+    "input": "\"What projects am I currently running?\"",
+    "expected_intent": "Read",
+    "expected_tool": "get_projects",
+    "expected_safety": "None (Auto-exec)"
+  },
+  {
+    "input": "\"Change Task 12 status to Done\"",
+    "expected_intent": "Write",
+    "expected_tool": "update_task_status",
+    "expected_safety": "Interrupt Required"
+  },
+  {
+    "input": "\"Create a new project for the London Launch\"",
+    "expected_intent": "Workflow",
+    "expected_tool": "initialize_standard_project",
+    "expected_safety": "Interrupt Required"
+  },
+  {
+    "input": "\"Who is assigned to Task 4?\"",
+    "expected_intent": "Read",
+    "expected_tool": "get_tasks",
+    "expected_safety": "None (Auto-exec)"
+  },
+  {
+    "input": "\"Give me some advice on life\"",
+    "expected_intent": "Clarify",
+    "expected_tool": "None (General Chat)",
+    "expected_safety": "None"
+  }
+]
