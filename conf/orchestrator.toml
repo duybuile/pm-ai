@@ -1,0 +1,3 @@
+[orchestrator]
+recursion_limit = 10
+checkpoint_path = "conf/langgraph_checkpoints.db"
