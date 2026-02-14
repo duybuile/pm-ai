@@ -21,3 +21,8 @@ run-app:
 	@echo "Running Streamlit app..."
 	@$(PYTHON) -m streamlit run $(SRC_DIR)/app.py
 	@echo "Streamlit app running successfully."
+
+run-eval:
+	@echo "Running evaluation..."
+	@$(PYTHON) -m src.evals.runner
+	@echo "Evaluation completed successfully."
