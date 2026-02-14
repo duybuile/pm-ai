@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -12,7 +13,7 @@ from typing import Generator
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parents[2]
-DEFAULT_DB_PATH = BASE_DIR / "conf" / "pm_ai.db"
+DEFAULT_DB_PATH = BASE_DIR / "data" / "pm_ai.db"
 MIGRATION_FILE = BASE_DIR / "migration" / "001_init.sql"
 
 
@@ -58,6 +59,7 @@ def initialize_database(reset: bool = False) -> None:
         raise FileNotFoundError(f"Migration file not found: {MIGRATION_FILE}")
 
     ddl_sql = MIGRATION_FILE.read_text(encoding="utf-8")
+    ddl_sql = _remove_downstream(ddl_sql)
     with get_connection() as connection:
         connection.executescript(ddl_sql)
 
@@ -91,17 +93,22 @@ def seed_database(force: bool = False) -> dict[str, int]:
     ]
 
     tasks = [
-        (1, 1, "Finalize navigation prototype", "Create Figma flows for all key journeys.", "In Progress", 1, "2026-02-20"),
+        (1, 1, "Finalize navigation prototype", "Create Figma flows for all key journeys.", "In Progress", 1,
+         "2026-02-20"),
         (2, 1, "Run usability interviews", "Interview 8 beta users for pain points.", "Not Started", 2, "2026-02-24"),
-        (3, 1, "Implement design system tokens", "Map new typography and spacing tokens.", "In Review", 4, "2026-02-19"),
+        (3, 1, "Implement design system tokens", "Map new typography and spacing tokens.", "In Review", 4,
+         "2026-02-19"),
         (4, 2, "Define campaign KPIs", "Align on conversion and CAC targets.", "Done", 2, "2026-02-05"),
-        (5, 2, "Create ad creative briefs", "Draft creative direction for paid channels.", "In Progress", 1, "2026-02-18"),
+        (5, 2, "Create ad creative briefs", "Draft creative direction for paid channels.", "In Progress", 1,
+         "2026-02-18"),
         (6, 2, "Set up attribution dashboard", "Connect ad spend and lead events.", "Not Started", 3, "2026-02-28"),
         (7, 3, "Inventory legacy ETL jobs", "Document ownership and dependencies.", "Done", 3, "2026-01-31"),
         (8, 3, "Provision warehouse schemas", "Create staging and mart schemas.", "In Progress", 4, "2026-02-17"),
         (9, 3, "Migrate finance pipelines", "Port monthly close transformations.", "Blocked", 2, "2026-03-04"),
-        (10, 4, "Map onboarding funnel", "Identify drop-off points from signup to activation.", "In Progress", 1, "2026-02-22"),
-        (11, 4, "Draft lifecycle email sequence", "Define first-30-day engagement emails.", "Not Started", 2, "2026-02-25"),
+        (10, 4, "Map onboarding funnel", "Identify drop-off points from signup to activation.", "In Progress", 1,
+         "2026-02-22"),
+        (11, 4, "Draft lifecycle email sequence", "Define first-30-day engagement emails.", "Not Started", 2,
+         "2026-02-25"),
         (12, 4, "Implement in-app checklist", "Build guided checklist for new accounts.", "Blocked", 4, "2026-03-01"),
         (13, 5, "Collect SOC2 evidence", "Gather and organize required artifacts.", "Done", 4, "2026-01-25"),
         (14, 5, "Review access controls", "Audit IAM roles and least privilege.", "Done", 3, "2026-01-28"),
@@ -162,3 +169,7 @@ def seed_database(force: bool = False) -> dict[str, int]:
         "tasks": len(tasks),
         "comments": len(comments),
     }
+
+
+def _remove_downstream(sql: str) -> str:
+    return re.sub(r"DROP TABLE IF EXISTS.*$", "", sql, flags=re.DOTALL)
