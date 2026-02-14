@@ -16,6 +16,7 @@ import streamlit as st
 
 from src import cfg
 from src.db.database import get_connection, initialize_database, seed_database
+from src.evals.runner import evaluate_golden_samples
 from src.orchestrator.graph import app as compiled_app
 from src.orchestrator.graph import build_graph, run_turn
 from utils.config.log_handler import setup_logger
@@ -63,6 +64,24 @@ def _dashboard() -> None:
     st.sidebar.subheader("Tasks")
     st.sidebar.dataframe(tasks, width="stretch", hide_index=True)
 
+    st.sidebar.divider()
+    if st.sidebar.button("Run Regression Tests", width="stretch"):
+        logger.info("Running evaluation regression suite from Streamlit sidebar.")
+        st.session_state.eval_report = evaluate_golden_samples()
+
+    eval_report = st.session_state.get("eval_report")
+    if eval_report:
+        summary = eval_report.get("summary", {})
+        st.sidebar.caption(
+            "Reliability: "
+            f"{summary.get('reliability_score', 0.0):.1f}% | "
+            f"Routing: {summary.get('routing_accuracy', 0.0):.1f}% | "
+            f"Extraction: {summary.get('extraction_accuracy', 0.0):.1f}% | "
+            f"Safety: {summary.get('safety_compliance', 0.0):.1f}%"
+        )
+        with st.sidebar.expander("Regression Results", expanded=False):
+            st.code(eval_report.get("table", ""), language="text")
+
 
 def _init_session_state() -> None:
     """Initialize chat and workflow session state."""
@@ -74,6 +93,9 @@ def _init_session_state() -> None:
 
     if "latest_state" not in st.session_state:
         st.session_state.latest_state = {}
+
+    if "eval_report" not in st.session_state:
+        st.session_state.eval_report = None
 
 
 def _display_chat_messages() -> None:
