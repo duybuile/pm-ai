@@ -1,0 +1,22 @@
+# Environment
+venv/
+
+# Data directories
+data/
+
+# Cache
+__pycache__
+*.ipynb_checkpoints
+*.*~
+
+# IDE directories
+.idea
+.vscode
+
+# Files
+.env
+*.log
+*.out
+
+# Vibe code instructions
+instructions/
