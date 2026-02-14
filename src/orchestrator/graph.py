@@ -9,7 +9,9 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Annotated, Any, NotRequired, TypedDict
+from typing import TYPE_CHECKING, Annotated, Any, cast
+
+from typing_extensions import TypedDict
 
 from src import cfg
 from src.tools.tools import (
@@ -21,15 +23,34 @@ from src.tools.tools import (
 )
 from utils.config.log_handler import setup_logger
 
-try:
-    from langgraph.graph.message import add_messages
-except Exception as e:  # pragma: no cover - fallback for environments without langgraph
+if TYPE_CHECKING:
     def add_messages(left: list[Any], right: list[Any]) -> list[Any]:
-        """Fallback add_messages implementation when langgraph isn't installed."""
+        """Type-checking stub for LangGraph reducer."""
         return [*(left or []), *(right or [])]
+else:
+    try:
+        from langgraph.graph.message import add_messages
+    except Exception:  # pragma: no cover - fallback for environments without langgraph
+        def add_messages(left: list[Any], right: list[Any]) -> list[Any]:
+            """Fallback add_messages implementation when langgraph isn't installed."""
+            return [*(left or []), *(right or [])]
+
+
+class State(TypedDict, total=False):
+    """Graph state shared across all nodes.
+
+    This state is intentionally partial (`total=False`) because LangGraph nodes
+    return incremental state updates rather than full snapshots.
+    """
+
+    messages: Annotated[list[Any], add_messages]
+    next_action: dict[str, Any] | None
+    explanation: str
+    planned_tool: dict[str, Any] | None
 
 
 logger = setup_logger(logger_name=__name__, level="info", console_logging=True)
+_CHECKPOINTER_CONTEXTS: list[Any] = []
 
 _READ_TOOLS = {
     "get_projects": get_projects,
@@ -41,15 +62,6 @@ _WRITE_TOOLS = {
     "create_project_with_tasks": create_project_with_tasks,
 }
 _ALL_TOOLS = {**_READ_TOOLS, **_WRITE_TOOLS}
-
-
-class State(TypedDict):
-    """Graph state shared across all nodes."""
-
-    messages: Annotated[list[Any], add_messages]
-    next_action: NotRequired[dict[str, Any] | None]
-    explanation: str
-    planned_tool: NotRequired[dict[str, Any] | None]
 
 
 def _msg_content(message: Any) -> str:
@@ -64,6 +76,35 @@ def _msg_role(message: Any) -> str:
     if isinstance(message, dict):
         return str(message.get("role", message.get("type", ""))).lower()
     return str(getattr(message, "type", getattr(message, "role", ""))).lower()
+
+
+def _message_to_dict(message: Any) -> dict[str, Any]:
+    """Convert LangChain/BaseMessage objects or dict-like messages to plain dicts."""
+    def normalize_role(role: str) -> str:
+        if role == "ai":
+            return "assistant"
+        if role == "human":
+            return "user"
+        return role
+
+    if isinstance(message, dict):
+        role = normalize_role(_msg_role(message))
+        payload: dict[str, Any] = {"role": role, "content": message.get("content", "")}
+        if "name" in message:
+            payload["name"] = message["name"]
+        if "tool_call_id" in message:
+            payload["tool_call_id"] = message["tool_call_id"]
+        return payload
+
+    role = normalize_role(_msg_role(message))
+    payload = {"role": role, "content": _msg_content(message)}
+    name = getattr(message, "name", None)
+    tool_call_id = getattr(message, "tool_call_id", None)
+    if name:
+        payload["name"] = name
+    if tool_call_id:
+        payload["tool_call_id"] = tool_call_id
+    return payload
 
 
 def _last_user_text(messages: list[Any]) -> str:
@@ -131,7 +172,7 @@ def _extract_project_name(text: str) -> str:
         candidate = trailing.group(1)
         candidate = re.split(r"\s+(?:with|and)\s+", candidate, maxsplit=1, flags=re.IGNORECASE)[0]
         cleaned = candidate.strip(" .")
-        if cleaned:
+        if cleaned and not cleaned.lower().startswith("and "):
             return cleaned
 
     return "New Project"
@@ -144,11 +185,18 @@ def _extract_assignee_name(text: str) -> str | None:
     return match.group(1).strip()
 
 
-def oracle_node(state: State) -> dict[str, Any]:
+def oracle_node(state: State) -> State:
     """Plan the next step: respond, run read tool, or stage write action for approval."""
     messages = state.get("messages", [])
     user_text = _last_user_text(messages)
     lower = user_text.lower()
+
+    # When a write action is pending, route directly to human approval handling.
+    if state.get("next_action"):
+        return {
+            "explanation": "Pending write action requires approval handling.",
+            "planned_tool": None,
+        }
 
     if not user_text:
         return {
@@ -276,7 +324,7 @@ def oracle_node(state: State) -> dict[str, Any]:
     }
 
 
-def tool_executor_node(state: State) -> dict[str, Any]:
+def tool_executor_node(state: State) -> State:
     """Execute read tools immediately and append tool output to message history."""
     planned_tool = state.get("planned_tool")
     if not planned_tool:
@@ -294,16 +342,17 @@ def tool_executor_node(state: State) -> dict[str, Any]:
 
     logger.info("Executing read tool %s with args=%s", tool_name, tool_args)
     result = tool(**tool_args)
+    tool_call_id = f"{tool_name}_read_call"
     return {
         "messages": [
-            {"role": "tool", "name": tool_name, "content": result},
+            {"role": "tool", "name": tool_name, "content": result, "tool_call_id": tool_call_id},
             {"role": "assistant", "content": f"Read result from {tool_name}: {result}"},
         ],
         "planned_tool": None,
     }
 
 
-def human_approval_node(state: State) -> dict[str, Any]:
+def human_approval_node(state: State) -> State:
     """Handle yes/no response for pending write actions and execute approved writes."""
     action = state.get("next_action")
     if not action:
@@ -339,10 +388,11 @@ def human_approval_node(state: State) -> dict[str, Any]:
     tool_args = action.get("args", {})
     logger.info("Executing approved write tool %s with args=%s", tool_name, tool_args)
     result = tool(**tool_args)
+    tool_call_id = f"{tool_name}_write_call"
 
     return {
         "messages": [
-            {"role": "tool", "name": tool_name, "content": result},
+            {"role": "tool", "name": tool_name, "content": result, "tool_call_id": tool_call_id},
             {"role": "assistant", "content": f"Write operation completed: {result}"},
         ],
         "next_action": None,
@@ -362,6 +412,7 @@ def _route_from_oracle(state: State) -> str:
 def _build_checkpointer(path: str):
     """Create a SqliteSaver checkpointer instance."""
     try:
+        from langgraph.checkpoint.base import BaseCheckpointSaver
         from langgraph.checkpoint.sqlite import SqliteSaver
     except ModuleNotFoundError as exc:  # pragma: no cover
         raise ModuleNotFoundError(
@@ -371,13 +422,31 @@ def _build_checkpointer(path: str):
     checkpoint_file = Path(path)
     checkpoint_file.parent.mkdir(parents=True, exist_ok=True)
 
-    try:
-        return SqliteSaver.from_conn_string(str(checkpoint_file))
-    except Exception:
-        return SqliteSaver.from_conn_string(f"sqlite:///{checkpoint_file}")
+    conn_candidates = (str(checkpoint_file), f"sqlite:///{checkpoint_file}")
+    last_error: Exception | None = None
+
+    for conn_string in conn_candidates:
+        try:
+            maybe_saver = SqliteSaver.from_conn_string(conn_string)
+            if isinstance(maybe_saver, BaseCheckpointSaver):
+                return maybe_saver
+
+            if hasattr(maybe_saver, "__enter__") and hasattr(maybe_saver, "__exit__"):
+                saver = maybe_saver.__enter__()
+                if isinstance(saver, BaseCheckpointSaver):
+                    # Keep the context manager alive for the app lifecycle.
+                    _CHECKPOINTER_CONTEXTS.append(maybe_saver)
+                    return saver
+                maybe_saver.__exit__(None, None, None)
+        except Exception as exc:  # pragma: no cover - depends on installed langgraph version
+            last_error = exc
+
+    raise TypeError(
+        "Unable to create a valid SqliteSaver checkpointer from connection string."
+    ) from last_error
 
 
-def build_graph(checkpoint_path: str | None = None):
+def build_graph(checkpoint_path: str | None = None) -> Any:
     """Compile and return the LangGraph app.
 
     Args:
@@ -393,10 +462,12 @@ def build_graph(checkpoint_path: str | None = None):
 
     path = checkpoint_path or cfg.get("orchestrator.checkpoint_path", "conf/langgraph_checkpoints.db")
 
-    builder = StateGraph(State)
-    builder.add_node("oracle", oracle_node)
-    builder.add_node("tool_executor", tool_executor_node)
-    builder.add_node("human_approval", human_approval_node)
+    # LangGraph's runtime accepts TypedDict state classes directly.
+    # Some type stubs still reject this valid usage, so we suppress that one false positive.
+    builder = StateGraph(State)  # type: ignore[arg-type]
+    builder.add_node("oracle", cast(Any, oracle_node))
+    builder.add_node("tool_executor", cast(Any, tool_executor_node))
+    builder.add_node("human_approval", cast(Any, human_approval_node))
 
     builder.add_edge(START, "oracle")
     builder.add_conditional_edges(
@@ -408,17 +479,20 @@ def build_graph(checkpoint_path: str | None = None):
             "__end__": END,
         },
     )
-    builder.add_edge("tool_executor", "oracle")
+    builder.add_edge("tool_executor", END)
     builder.add_edge("human_approval", END)
 
     checkpointer = _build_checkpointer(path)
-    return builder.compile(checkpointer=checkpointer, interrupt_before=["human_approval"])
+    return builder.compile(checkpointer=checkpointer)
 
 
-def run_turn(app: Any, user_message: str, thread_id: str) -> dict[str, Any]:
+def run_turn(app: Any, user_message: str, thread_id: str) -> State:
     """Run one chat turn with configured recursion limit and thread persistence."""
     recursion_limit = int(cfg.get("orchestrator.recursion_limit", 10))
-    return app.invoke(
+    raw_state = app.invoke(
         {"messages": [{"role": "user", "content": user_message}]},
         config={"configurable": {"thread_id": thread_id}, "recursion_limit": recursion_limit},
     )
+    messages = raw_state.get("messages", [])
+    raw_state["messages"] = [_message_to_dict(message) for message in messages]
+    return raw_state
