@@ -1,0 +1,5 @@
+[streamlit]
+page_title = "PM Assistant"
+page_icon = "🪐"
+layout = "wide"
+chat_title = "PM Assistant"
