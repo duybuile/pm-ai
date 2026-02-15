@@ -26,3 +26,8 @@ run-eval:
 	@echo "Running evaluation..."
 	@$(PYTHON) -m src.evals.runner
 	@echo "Evaluation completed successfully."
+
+run-test:
+	@echo "Running unit tests..."
+	@$(PYTHON) -m pytest -q
+	@echo "Tests completed successfully."

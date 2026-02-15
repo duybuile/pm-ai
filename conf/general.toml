@@ -1,7 +1,3 @@
 [logging]
 level = "info"
 console_logging = true
-
-[llm.openai]
-model = "gpt-5.2"
-base = "https://api.openai.com/v1"

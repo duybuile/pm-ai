@@ -9,6 +9,7 @@ Features:
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any
 
@@ -19,13 +20,8 @@ from src.db.database import get_connection, initialize_database, seed_database
 from src.evals.runner import evaluate_golden_samples
 from src.orchestrator.graph import app as compiled_app
 from src.orchestrator.graph import build_graph, run_turn
-from utils.config.log_handler import setup_logger
 
-logger = setup_logger(
-    logger_name=__name__,
-    level=cfg.get("logging.level", "info"),
-    console_logging=cfg.get("logging.console_logging", True)
-)
+logger = logging.getLogger(__name__)
 
 
 def _safe_graph_app() -> Any:
