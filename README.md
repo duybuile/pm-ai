@@ -64,8 +64,6 @@ Configuration is loaded from TOML files in `conf/` via `src.conf.Config`.
 ### Environment variables
 - `OPENAI_API_KEY`
   - Required for LLM oracle planning when using OpenAI.
-- `PM_AI_DB_PATH`
-  - Optional override for SQLite DB path (useful in tests/local isolation).
 
 ### Key config files
 - `conf/orchestrator.toml`
@@ -85,7 +83,11 @@ Configuration is loaded from TOML files in `conf/` via `src.conf.Config`.
 
 Prompt version is selected by `orchestrator.prompt_version`.
 
-## Data Flow Explanation
+## Data Flow Explanation (high level)
+<p align="center">
+  <img src="image/highlevel-architecture.png" width="600">
+</p>
+
 1. User sends a message from Streamlit (`src/ui/st_app.py`).
 2. Message is sent to LangGraph runtime (`src/orchestrator/runtime.py`) with a persistent `thread_id`.
 3. `oracle_node` (`src/orchestrator/nodes.py`) decides next step:
