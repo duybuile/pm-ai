@@ -31,3 +31,6 @@ class State(TypedDict, total=False):
     next_action: dict[str, Any] | None
     explanation: str
     planned_tool: dict[str, Any] | None
+    last_tool_name: str | None
+    last_tool_mode: str | None
+    last_tool_result: str | None

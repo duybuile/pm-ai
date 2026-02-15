@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from pathlib import Path
@@ -13,6 +14,8 @@ from src.tools.tools_registry import get_tool_definitions
 from utils.llms.llm_client import LLMClient
 
 from src.orchestrator.message_utils import latest_tool_payload, msg_content, msg_role
+
+logger = logging.getLogger(__name__)
 
 
 def extract_task_id(text: str) -> int | None:
@@ -65,6 +68,11 @@ def load_oracle_prompt() -> str:
     prompt_file = Path(prompt_dir) / f"oracle_{prompt_version}.txt"
     if not prompt_file.exists():
         raise FileNotFoundError(f"Oracle prompt file not found: {prompt_file}")
+    logger.debug(
+        "Loading oracle prompt template: version=%s, path=%s",
+        prompt_version,
+        prompt_file,
+    )
     return prompt_file.read_text(encoding="utf-8")
 
 
@@ -84,6 +92,30 @@ def safe_json_object(text: str) -> dict[str, Any] | None:
 def fallback_oracle_response(user_text: str, messages: list[Any]) -> dict[str, Any]:
     """Heuristic fallback used when LLM planning is unavailable."""
     lower = user_text.lower()
+    recent_projects = latest_tool_payload(messages, "get_projects")
+    recent_tasks = latest_tool_payload(messages, "get_tasks")
+    recent_members = latest_tool_payload(messages, "search_team_members")
+
+    # Termination step for multi-turn read loops:
+    # if a relevant read observation already exists, return final answer instead of repeating tool calls.
+    if recent_projects and any(phrase in lower for phrase in ["list projects", "show projects", "all projects"]):
+        return {
+            "tool": None,
+            "args": {},
+            "explanation": f"Read result from get_projects: {recent_projects}",
+        }
+    if recent_tasks and "task" in lower and any(phrase in lower for phrase in ["show", "list", "what are"]):
+        return {
+            "tool": None,
+            "args": {},
+            "explanation": f"Read result from get_tasks: {recent_tasks}",
+        }
+    if recent_members and "sarah" in lower and "id" in lower:
+        return {
+            "tool": None,
+            "args": {},
+            "explanation": f"Read result from search_team_members: {recent_members}",
+        }
 
     if any(phrase in lower for phrase in ["list projects", "show projects", "all projects"]):
         return {"tool": "get_projects", "args": {}, "explanation": "I should fetch the current project list."}
@@ -163,20 +195,33 @@ def fallback_oracle_response(user_text: str, messages: list[Any]) -> dict[str, A
 
 def plan_with_llm(user_text: str, messages: list[Any]) -> dict[str, Any]:
     """Get oracle plan from LLM client using strict JSON contract."""
+    logger.info("Oracle planning started.")
     prompt_template = load_oracle_prompt()
     tools_manual = get_tool_definitions(as_text=True)
     history_lines = []
+    recent_tool_outputs = []
     for message in messages[-6:]:
         role = msg_role(message)
         if role not in {"user", "human", "assistant", "ai", "tool"}:
             continue
-        history_lines.append(f"{role}: {msg_content(message)}")
+        content = msg_content(message)
+        history_lines.append(f"{role}: {content}")
+        if role == "tool":
+            recent_tool_outputs.append(content)
     history_text = "\n".join(history_lines) if history_lines else "(no prior messages)"
-    full_prompt = prompt_template.format(
-        tools_manual=tools_manual,
-        conversation_history=history_text,
-        user_input=user_text,
-    )
+    tool_observations = "\n".join(recent_tool_outputs[-3:]) if recent_tool_outputs else "(none)"
+    try:
+        full_prompt = prompt_template.format(
+            tools_manual=tools_manual,
+            conversation_history=history_text,
+            user_input=user_text,
+            recent_tool_outputs=tool_observations,
+        )
+    except KeyError as exc:
+        # Most commonly caused by unescaped braces in prompt templates.
+        raise ValueError(
+            "Oracle prompt template has unescaped braces. Escape literal JSON braces with '{{' and '}}'."
+        ) from exc
 
     llm_api = cfg.get("orchestrator.llm.api", "openai")
     llm_base = cfg.get("orchestrator.llm.base", "https://api.openai.com/v1")
@@ -184,6 +229,13 @@ def plan_with_llm(user_text: str, messages: list[Any]) -> dict[str, Any]:
     llm_temperature = float(cfg.get("orchestrator.llm.temperature", 0.0))
     api_key_env = cfg.get("orchestrator.llm.api_key_env", "OPENAI_API_KEY")
     api_key = os.getenv(api_key_env, "")
+    logger.info(
+        "Oracle LLM config: api=%s model=%s base=%s api_key_present=%s",
+        llm_api,
+        llm_model,
+        llm_base,
+        bool(api_key),
+    )
 
     client = LLMClient(
         api=llm_api,
@@ -193,10 +245,16 @@ def plan_with_llm(user_text: str, messages: list[Any]) -> dict[str, Any]:
         api_key=api_key,
     )
     raw = client.call(full_prompt)
+    logger.debug("Oracle raw response length=%d", len(raw or ""))
     parsed = safe_json_object(raw or "")
     if not parsed:
+        logger.warning(
+            "Oracle response was not valid strict JSON. raw_preview=%s",
+            (raw or "")[:240],
+        )
         raise ValueError(f"Oracle LLM returned non-JSON content: {raw}")
 
+    logger.info("Oracle planning completed with tool=%s", parsed.get("tool"))
     return {
         "tool": parsed.get("tool"),
         "args": parsed.get("args", {}) if isinstance(parsed.get("args", {}), dict) else {},

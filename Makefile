@@ -28,6 +28,6 @@ run-eval:
 	@echo "Evaluation completed successfully."
 
 run-test:
-	@echo "Running tests..."
+	@echo "Running unit tests..."
 	@$(PYTHON) -m pytest -q
 	@echo "Tests completed successfully."

@@ -17,3 +17,8 @@ def route_from_oracle(state: State) -> str:
 def route_from_approval(state: State) -> str:
     """Choose next step after human approval handling."""
     return "execute_tool" if state.get("planned_tool") else "__end__"
+
+
+def route_from_execute_tool(state: State) -> str:
+    """After executing a tool, continue reasoning for read flows, else finish."""
+    return "oracle" if state.get("last_tool_mode") == "read" else "__end__"

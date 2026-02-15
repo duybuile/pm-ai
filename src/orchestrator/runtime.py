@@ -9,7 +9,11 @@ from typing import Any, cast
 from src import cfg
 from src.orchestrator.message_utils import message_to_dict
 from src.orchestrator.nodes import execute_tool_node, human_approval_node, oracle_node
-from src.orchestrator.routing import route_from_approval, route_from_oracle
+from src.orchestrator.routing import (
+    route_from_approval,
+    route_from_execute_tool,
+    route_from_oracle,
+)
 from src.orchestrator.state import State
 
 logger = logging.getLogger(__name__)
@@ -84,7 +88,14 @@ def build_graph(checkpoint_path: str | None = None) -> Any:
             "__end__": END,
         },
     )
-    builder.add_edge("execute_tool", END)
+    builder.add_conditional_edges(
+        "execute_tool",
+        route_from_execute_tool,
+        {
+            "oracle": "oracle",
+            "__end__": END,
+        },
+    )
 
     checkpointer = build_checkpointer(path)
     return builder.compile(checkpointer=checkpointer)

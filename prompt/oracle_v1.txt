@@ -12,11 +12,11 @@ Rules:
 5. ALWAYS return strict JSON only. No markdown, no prose outside JSON.
 
 Output schema:
-{
+{{
   "tool": "tool_name_or_none",
-  "args": {"param": "value"},
+  "args": {{"param": "value"}},
   "explanation": "Human-friendly reasoning"
-}
+}}
 
 Conversation history:
 {conversation_history}
