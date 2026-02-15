@@ -106,28 +106,14 @@ Prompt version is selected by `orchestrator.prompt_version`.
 
 ## Project Structure
 ```text
-src/
-  app.py
-  db/
-  tools/
-    base.py
-    read_tools.py
-    write_tools.py
-    tools_registry.py
-  orchestrator/
-    state.py
-    planner.py
-    nodes.py
-    routing.py
-    runtime.py
-    graph.py
-  ui/
-    st_app.py
-  evals/
-    dataset.py
-    golden_samples.json
-    runner.py
-conf/
-prompt/
-tests/
+src/                Main application source.
+  app.py            Streamlit entrypoint
+  db/               SQLite setup, schema bootstrapping, and seed data logic.
+  tools/            Tool implementations and registry used by the orchestrator.
+  orchestrator/     LangGraph state, planning, nodes, routing, and runtime wiring.
+  ui/               Streamlit UI (chat, approval controls, dashboard, logs).
+  evals/            Golden dataset + evaluation runner for regression checks.
+conf/               TOML configuration files for logging, orchestrator, and Streamlit behaviour.
+prompt/             Versioned oracle prompt templates used by the LLM planner.
+tests/              Unit and regression tests for tools, orchestrator behavior, and evals.
 ```
