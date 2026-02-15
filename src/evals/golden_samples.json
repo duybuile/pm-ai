@@ -1,0 +1,40 @@
+[
+  {
+    "input": "List projects",
+    "expected_intent": "read",
+    "expected_tool": "get_projects",
+    "expected_entities": {}
+  },
+  {
+    "input": "Show tasks for project 3",
+    "expected_intent": "read",
+    "expected_tool": "get_tasks",
+    "expected_entities": {
+      "project_id": 3
+    }
+  },
+  {
+    "input": "What is Sarah's ID?",
+    "expected_intent": "read",
+    "expected_tool": "search_team_members",
+    "expected_entities": {
+      "name": "Sarah",
+      "id": 1
+    }
+  },
+  {
+    "input": "Update task 5 to done",
+    "expected_intent": "write",
+    "expected_tool": "update_task_status",
+    "expected_entities": {
+      "task_id": 5,
+      "status": "Done"
+    }
+  },
+  {
+    "input": "Please help me understand what you can do",
+    "expected_intent": "clarification",
+    "expected_tool": null,
+    "expected_entities": {}
+  }
+]

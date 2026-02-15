@@ -1,0 +1,12 @@
+[orchestrator]
+recursion_limit = 10
+checkpoint_path = "data/langgraph_checkpoints.db"
+prompt_dir = "prompt"
+prompt_version = "v2"
+
+[orchestrator.llm]
+api = "openai"
+base = "https://api.openai.com/v1"
+model = "gpt-5.2-2025-12-11"
+temperature = 0.0
+api_key_env = "OPENAI_API_KEY"
