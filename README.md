@@ -58,6 +58,39 @@ python -m src.evals.runner
 python -m pytest -q
 ```
 
+## Run with Docker
+### Prerequisites
+- Docker Desktop (or Docker Engine + Docker Compose plugin)
+
+### 1. Set environment variable
+The app uses OpenAI for oracle planning, so set `OPENAI_API_KEY`.
+
+```bash
+# macOS/Linux
+export OPENAI_API_KEY="your_api_key_here"
+
+# Windows PowerShell
+$env:OPENAI_API_KEY="your_api_key_here"
+```
+
+### 2. Build and run with Docker Compose
+```bash
+docker compose up --build
+```
+
+Then open: `http://localhost:8501`
+
+### 3. Stop containers
+```bash
+docker compose down
+```
+
+### Optional: Run without Compose
+```bash
+docker build -t pm-ai:latest .
+docker run --rm -p 8501:8501 -e OPENAI_API_KEY="$OPENAI_API_KEY" -v "$(pwd)/data:/app/data" pm-ai:latest
+```
+
 ## Configuration
 Configuration is loaded from TOML files in `conf/` via `src.conf.Config`.
 
